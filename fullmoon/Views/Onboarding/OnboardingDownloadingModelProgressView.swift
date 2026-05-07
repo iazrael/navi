@@ -3,7 +3,7 @@
 //  Navi
 //
 //  Based on fullmoon by Jordan Singer.
-//  Modified for Navi - uses NaviModel and LiteRTInferenceService.
+//  Modified for Navi - downloads model using ModelDownloader, then loads via LiteRTInferenceService.
 //
 
 import SwiftUI
@@ -14,6 +14,7 @@ struct OnboardingDownloadingModelProgressView: View {
     @Binding var selectedModel: NaviModel
     @Environment(LiteRTInferenceService.self) var llm
     @State var didSwitchModel = false
+    @State var downloader = ModelDownloader()
     
     var installed: Bool {
         llm.progress == 1 && didSwitchModel
@@ -35,9 +36,19 @@ struct OnboardingDownloadingModelProgressView: View {
                         .multilineTextAlignment(.center)
                 }
                 
-                ProgressView(value: llm.progress, total: 1)
-                    .progressViewStyle(.linear)
-                    .padding(.horizontal, 48)
+                if downloader.isDownloading {
+                    ProgressView(value: downloader.downloadProgress, total: 1)
+                        .progressViewStyle(.linear)
+                        .padding(.horizontal, 48)
+                    
+                    Text(String(format: "%.1f%%", downloader.downloadProgress * 100))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ProgressView(value: llm.progress, total: 1)
+                        .progressViewStyle(.linear)
+                        .padding(.horizontal, 48)
+                }
             }
             
             Spacer()
@@ -57,6 +68,20 @@ struct OnboardingDownloadingModelProgressView: View {
                 .buttonStyle(.borderedProminent)
                 .buttonBorderShape(.capsule)
                 .padding(.horizontal)
+            } else if let error = downloader.errorMessage {
+                VStack(spacing: 12) {
+                    Text("Download failed: \(error)")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                    
+                    Button("Retry") {
+                        Task { await downloadAndLoadModel() }
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.horizontal)
             } else {
                 Text("keep this screen open and wait for the installation to complete.")
                     .font(.caption)
@@ -70,7 +95,7 @@ struct OnboardingDownloadingModelProgressView: View {
         .toolbar(installed ? .hidden : .visible)
         .navigationBarBackButtonHidden()
         .task {
-            await loadModel()
+            await downloadAndLoadModel()
         }
         #if os(iOS)
         .sensoryFeedback(.success, trigger: installed)
@@ -93,9 +118,18 @@ struct OnboardingDownloadingModelProgressView: View {
         #endif
     }
     
-    func loadModel() async {
-        // TODO: 真机验证 - Download model from downloadURL, then load
-        // For now, attempt to load (will succeed if model file already exists)
+    func downloadAndLoadModel() async {
+        // Step 1: Download model file (if not already downloaded)
+        if !downloader.isModelDownloaded(selectedModel) {
+            do {
+                try await downloader.download(model: selectedModel)
+            } catch {
+                // Error is displayed via downloader.errorMessage
+                return
+            }
+        }
+        
+        // Step 2: Load model into inference engine
         await llm.switchModel(selectedModel)
         didSwitchModel = true
     }

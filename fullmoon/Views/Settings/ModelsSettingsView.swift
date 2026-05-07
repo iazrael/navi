@@ -3,7 +3,7 @@
 //  Navi
 //
 //  Based on fullmoon by Jordan Singer.
-//  Modified for Navi - uses NaviModelRegistry and LiteRTInferenceService.
+//  Modified for Navi - uses NaviModelRegistry, LiteRTInferenceService, and ModelDownloader.
 //
 
 import SwiftUI
@@ -12,6 +12,8 @@ struct ModelsSettingsView: View {
     @EnvironmentObject var appManager: AppManager
     @Environment(LiteRTInferenceService.self) var llm
     @State var showOnboardingInstallModelView = false
+    @State var downloadingModel: NaviModel?
+    @State var downloader = ModelDownloader()
     
     var body: some View {
         Form {
@@ -32,6 +34,38 @@ struct ModelsSettingsView: View {
                     #if os(macOS)
                     .buttonStyle(.borderless)
                     #endif
+                }
+            }
+            
+            if let model = downloadingModel, downloader.isDownloading {
+                Section(header: Text("downloading")) {
+                    VStack(spacing: 8) {
+                        Text(model.displayName)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        
+                        ProgressView(value: downloader.downloadProgress, total: 1)
+                            .progressViewStyle(.linear)
+                        
+                        HStack {
+                            Text(String(format: "%.1f%%", downloader.downloadProgress * 100))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Cancel") {
+                                downloader.cancel()
+                                downloadingModel = nil
+                            }
+                            .foregroundStyle(.red)
+                        }
+                    }
+                }
+            }
+            
+            if let error = downloader.errorMessage {
+                Section {
+                    Text("Download failed: \(error)")
+                        .foregroundStyle(.red)
+                        .font(.caption)
                 }
             }
             
@@ -74,6 +108,18 @@ struct ModelsSettingsView: View {
     
     private func switchModel(_ modelName: String) async {
         if let model = NaviModelRegistry.getModelById(modelName) {
+            // Check if model file exists, download if needed
+            if !downloader.isModelDownloaded(model) {
+                downloadingModel = model
+                do {
+                    try await downloader.download(model: model)
+                } catch {
+                    downloadingModel = nil
+                    return
+                }
+                downloadingModel = nil
+            }
+            
             appManager.currentModelName = modelName
             appManager.playHaptic()
             await llm.switchModel(model)
