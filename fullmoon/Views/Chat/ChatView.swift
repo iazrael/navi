@@ -346,12 +346,15 @@ struct ChatView: View {
                             systemPrompt: appManager.systemPrompt,
                             imageData: inferenceImageData
                         )
-                        sendMessage(Message(
+                        let wasCancelled = llm.cancelled
+                        let assistantMsg = Message(
                             role: .assistant,
                             content: output,
                             thread: currentThread,
                             generatingTime: llm.thinkingTime
-                        ))
+                        )
+                        assistantMsg.isComplete = !wasCancelled
+                        sendMessage(assistantMsg)
                         generatingThreadID = nil
                     }
                 }

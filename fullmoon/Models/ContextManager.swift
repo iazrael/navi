@@ -12,7 +12,7 @@ final class ContextManager {
     let maxContextTokens: Int
     private let maxTurns: Int
 
-    init(maxContextTokens: Int = 3072, maxTurns: Int = 10) {
+    init(maxContextTokens: Int = NaviConfig.maxContextTokens, maxTurns: Int = NaviConfig.maxTurns) {
         self.maxContextTokens = maxContextTokens
         self.maxTurns = maxTurns
     }

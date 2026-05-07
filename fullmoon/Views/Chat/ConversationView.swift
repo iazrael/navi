@@ -11,14 +11,19 @@ import SwiftUI
 
 extension TimeInterval {
     var formatted: String {
-        let totalSeconds = Int(self)
-        let minutes = totalSeconds / 60
-        let seconds = totalSeconds % 60
+        let totalSeconds = self
+        let minutes = Int(totalSeconds) / 60
+        let seconds = totalSeconds - Double(minutes * 60)
 
         if minutes > 0 {
-            return seconds > 0 ? "\(minutes)m \(seconds)s" : "\(minutes)m"
+            let secs = Int(seconds.rounded())
+            return secs > 0 ? "\(minutes)m \(secs)s" : "\(minutes)m"
         } else {
-            return "\(seconds)s"
+            if totalSeconds < 5 {
+                return String(format: "%.1fs", totalSeconds)
+            } else {
+                return "\(Int(totalSeconds.rounded()))s"
+            }
         }
     }
 }

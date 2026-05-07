@@ -14,7 +14,7 @@ final class StreamThrottler {
     private let updateInterval: TimeInterval
     private let maxBufferTokens: Int
 
-    init(updateInterval: TimeInterval = 0.05, maxBufferTokens: Int = 4) {
+    init(updateInterval: TimeInterval = NaviConfig.streamUpdateInterval, maxBufferTokens: Int = NaviConfig.streamMaxBufferTokens) {
         self.updateInterval = updateInterval
         self.maxBufferTokens = maxBufferTokens
     }

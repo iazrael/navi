@@ -12,16 +12,16 @@ enum ImageCompressor {
     /// Compress image for model inference (maintain reasonable resolution)
     static func compressForInference(
         _ image: UIImage,
-        maxSize: CGSize = CGSize(width: 1024, height: 1024)
+        maxSize: CGSize = CGSize(width: NaviConfig.imageSize, height: NaviConfig.imageSize)
     ) -> Data? {
         let scaled = scaleImage(image, to: maxSize)
-        return scaled.jpegData(compressionQuality: 0.7)
+        return scaled.jpegData(compressionQuality: NaviConfig.inferenceCompressionQuality)
     }
 
     /// Compress image for chat record thumbnail storage
     static func compressForThumbnail(_ image: UIImage) -> Data? {
-        let thumbnail = scaleImage(image, to: CGSize(width: 200, height: 200))
-        return thumbnail.jpegData(compressionQuality: 0.5)
+        let thumbnail = scaleImage(image, to: CGSize(width: NaviConfig.thumbnailSize, height: NaviConfig.thumbnailSize))
+        return thumbnail.jpegData(compressionQuality: NaviConfig.thumbnailCompressionQuality)
     }
 
     /// Scale image to fit within maxSize, maintaining aspect ratio, never upscale
