@@ -8,7 +8,7 @@
 
 import Foundation
 
-actor ContextManager {
+final class ContextManager {
     let maxContextTokens: Int
     private let maxTurns: Int
 

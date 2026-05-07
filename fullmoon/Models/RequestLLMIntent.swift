@@ -84,7 +84,7 @@ struct RequestLLMIntent: AppIntent {
         }
     }
 
-    static var openAppWhenRun: Bool = false
+    static var openAppWhenRun: Bool = true
 }
 
 struct NewChatShortcut: AppShortcutsProvider {

@@ -8,7 +8,7 @@
 import Foundation
 
 /// Throttles streaming token output to reduce UI update frequency.
-actor StreamThrottler {
+final class StreamThrottler {
     private var buffer = ""
     private var lastUpdateTime: Date = .distantPast
     private let updateInterval: TimeInterval
