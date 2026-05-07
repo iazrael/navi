@@ -8,6 +8,10 @@
 
 import Foundation
 import SwiftUI
+// NOTE: Add LiteRTLM-Swift SPM dependency in Xcode:
+//   https://github.com/mylovelycodes/LiteRTLM-Swift
+// Then uncomment the import below:
+// import LiteRTLMSwift
 
 @Observable
 @MainActor
@@ -33,20 +37,20 @@ class LiteRTInferenceService {
     private var startTime: Date?
 
     // --- Internal state ---
-    // TODO: 真机验证 - Replace with actual LiteRTLMEngine once SPM dependency is resolved
-    // private var engine: LiteRTLMEngine?
+    private var engine: Any? // Will be LiteRTLMEngine once SPM dependency added
     private var loadedModelId: String?
 
     // --- Configuration ---
-    let maxTokens = 4096
+    var maxTokens: Int { NaviConfig.maxTokens }
     private let displayEveryNTokens = 4
-    private let contextManager = ContextManager(maxContextTokens: 3072)
+    private let contextManager = ContextManager(maxContextTokens: NaviConfig.maxContextTokens)
 
     enum InferenceError: Error {
         case modelNotLoaded
         case engineBusy
         case modelFileNotFound
         case loadFailed(String)
+        case inferenceFailed(String)
     }
 
     // MARK: - Model Loading
@@ -78,8 +82,22 @@ class LiteRTInferenceService {
             throw InferenceError.modelFileNotFound
         }
 
-        // TODO: 真机验证 - Actual engine initialization
-        // engine = try await LiteRTLMEngine(path: filePath)
+        // Unload previous engine
+        unloadModel()
+
+        progress = 0.2
+
+        // Initialize LiteRTLMEngine and load model
+        // When LiteRTLM-Swift SPM is added, this becomes:
+        //   let litertEngine = LiteRTLMEngine(modelPath: filePath, backend: "gpu")
+        //   try await litertEngine.load()
+        //   engine = litertEngine
+
+        // TODO: verify with LiteRTLM-Swift docs - uncomment when SPM dependency is added
+        // let litertEngine = LiteRTLMEngine(modelPath: filePath, backend: "gpu")
+        // try await litertEngine.load()
+        // engine = litertEngine
+
         loadedModelId = model.id
         modelInfo = "Loaded \(model.displayName)"
         progress = 1.0
@@ -105,13 +123,12 @@ class LiteRTInferenceService {
             try await loadModel(model)
 
             // Build prompt history with context management
-            let history = await contextManager.buildPromptHistory(
+            let history = contextManager.buildPromptHistory(
                 thread: thread,
                 systemPrompt: systemPrompt
             )
             let promptText = buildPromptFromHistory(history)
 
-            // TODO: 真机验证 - Actual inference with LiteRTLMEngine
             if let imageData = imageData {
                 // Multimodal inference path
                 output = try await performVisionInference(
@@ -126,6 +143,9 @@ class LiteRTInferenceService {
             let elapsed = Date().timeIntervalSince(startTime ?? Date())
             thinkingTime = elapsed
             stat = " 生成耗时: \(elapsed.formatted)"
+
+            // Mark the thread's model
+            thread.modelId = model.id
 
         } catch {
             output = "推理失败: \(error.localizedDescription)"
@@ -142,7 +162,11 @@ class LiteRTInferenceService {
     }
 
     func unloadModel() {
-        // engine = nil
+        // TODO: verify with LiteRTLM-Swift docs - call engine.unload() when SPM is added
+        // if let litertEngine = engine as? LiteRTLMEngine {
+        //     litertEngine.unload()
+        // }
+        engine = nil
         loadedModelId = nil
         modelInfo = ""
     }
@@ -177,42 +201,58 @@ class LiteRTInferenceService {
         return parts.joined(separator: "\n")
     }
 
-    // TODO: 真机验证 - Implement with actual LiteRTLMEngine streaming API
+    /// Streaming text inference using LiteRTLMEngine
     private func performStreamingInference(prompt: String) async throws -> String {
-        // Placeholder: simulates streaming behavior
-        // Real implementation:
-        //   var tokenCount = 0
-        //   var fullOutput = ""
-        //   let throttler = StreamThrottler()
-        //   for try await chunk in engine.generateStreaming(prompt: prompt) {
-        //       if cancelled { break }
-        //       tokenCount += 1
-        //       if let text = await throttler.append(chunk) {
-        //           fullOutput += text
-        //           self.output = fullOutput
-        //       }
-        //   }
-        //   if let remaining = await throttler.flush() {
-        //       fullOutput += remaining
-        //       self.output = fullOutput
-        //   }
-        //   return fullOutput
+        guard engine != nil else {
+            throw InferenceError.modelNotLoaded
+        }
 
-        // Mock implementation for compilation
-        return "[LiteRT-LM inference output placeholder]"
+        var fullOutput = ""
+        let throttler = StreamThrottler()
+
+        // TODO: verify with LiteRTLM-Swift docs - uncomment when SPM dependency is added
+        // let litertEngine = engine as! LiteRTLMEngine
+        // let stream = litertEngine.generateStreaming(
+        //     prompt: prompt,
+        //     temperature: 0.7,
+        //     maxTokens: maxTokens
+        // )
+        // for try await chunk in stream {
+        //     if cancelled { break }
+        //     if let flushed = throttler.append(chunk) {
+        //         fullOutput += flushed
+        //         self.output = fullOutput
+        //     }
+        // }
+        // if let remaining = throttler.flush() {
+        //     fullOutput += remaining
+        //     self.output = fullOutput
+        // }
+
+        // Placeholder: remove when SPM dependency is added
+        fullOutput = "[LiteRT-LM inference output placeholder]"
+
+        return fullOutput
     }
 
-    // TODO: 真机验证 - Implement with actual LiteRTLMEngine vision API
+    /// Vision (image understanding) inference using LiteRTLMEngine
     private func performVisionInference(prompt: String, imageData: Data) async throws -> String {
-        // Real implementation:
-        //   let result = try await engine.vision(
-        //       imageData: imageData,
-        //       prompt: prompt,
-        //       maxTokens: maxTokens
-        //   )
-        //   return result
+        guard engine != nil else {
+            throw InferenceError.modelNotLoaded
+        }
 
-        // Mock implementation for compilation
+        // TODO: verify with LiteRTLM-Swift docs - uncomment when SPM dependency is added
+        // let litertEngine = engine as! LiteRTLMEngine
+        // let result = try await litertEngine.vision(
+        //     imageData: imageData,
+        //     prompt: prompt,
+        //     temperature: 0.7,
+        //     maxTokens: maxTokens,
+        //     maxImageDimension: NaviConfig.imageSize
+        // )
+        // return result
+
+        // Placeholder: remove when SPM dependency is added
         return "[Vision inference output placeholder]"
     }
 }
