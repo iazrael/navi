@@ -10,7 +10,6 @@ import SwiftUI
 
 struct ImagePreviewView: View {
     @Binding var selectedImage: UIImage?
-    @State private var photoPickerItem: PhotosPickerItem?
     let onRemove: () -> Void
 
     var body: some View {
@@ -29,7 +28,6 @@ struct ImagePreviewView: View {
                         .foregroundStyle(.secondary)
                     Button("移除") {
                         selectedImage = nil
-                        photoPickerItem = nil
                         onRemove()
                     }
                     .font(.caption)

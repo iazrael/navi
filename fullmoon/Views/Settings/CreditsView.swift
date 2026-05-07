@@ -11,7 +11,7 @@ struct CreditsView: View {
     var body: some View {
         Form {
             Section {
-                Link("MLX Swift", destination: URL(string: "https://github.com/ml-explore/mlx-swift")!)
+                Link("LiteRTLM-Swift", destination: URL(string: "https://github.com/mylovelycodes/LiteRTLM-Swift")!))
                     .badge(Text(Image(systemName: "arrow.up.right")))
                 Link("Mainframe", destination: URL(string: "https://mainfra.me")!)
                     .badge(Text(Image(systemName: "arrow.up.right")))

@@ -22,7 +22,6 @@ struct NaviApp: App {
                 .modelContainer(for: [Thread.self, Message.self])
                 .environmentObject(appManager)
                 .environment(llm)
-                .environment(DeviceStat())
                 #if os(macOS) || os(visionOS)
                 .frame(minWidth: 640, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
                 #if os(macOS)
