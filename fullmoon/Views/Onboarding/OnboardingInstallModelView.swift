@@ -4,6 +4,7 @@
 //
 //  Based on fullmoon by Jordan Singer.
 //  Modified for Navi - uses NaviModelRegistry instead of MLX ModelConfiguration.
+//  Sprint 5.1: Shows all available models with device recommendations and metadata.
 //
 
 import os
@@ -57,9 +58,16 @@ struct OnboardingInstallModelView: View {
                     ForEach(appManager.installedModels, id: \.self) { modelName in
                         Button {} label: {
                             Label {
-                                Text(appManager.modelDisplayName(modelName))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(appManager.modelDisplayName(modelName))
+                                    if let model = NaviModelRegistry.getModelById(modelName) {
+                                        modelMetadata(model)
+                                    }
+                                }
+                                .tint(.primary)
                             } icon: {
-                                Image(systemName: "checkmark")
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
                             }
                         }
                         .badge(sizeBadge(NaviModelRegistry.getModelById(modelName)))
@@ -74,10 +82,14 @@ struct OnboardingInstallModelView: View {
                 Section(header: Text("suggested")) {
                     Button { selectedModel = suggestedModel } label: {
                         Label {
-                            Text(suggestedModel.displayName)
-                                .tint(.primary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(suggestedModel.displayName)
+                                    .tint(.primary)
+                                modelMetadata(suggestedModel)
+                            }
                         } icon: {
                             Image(systemName: selectedModel.id == suggestedModel.id ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(selectedModel.id == suggestedModel.id ? .green : .secondary)
                         }
                     }
                     .badge(sizeBadge(suggestedModel))
@@ -92,10 +104,14 @@ struct OnboardingInstallModelView: View {
                     ForEach(filteredModels) { model in
                         Button { selectedModel = model } label: {
                             Label {
-                                Text(model.displayName)
-                                    .tint(.primary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(model.displayName)
+                                        .tint(.primary)
+                                    modelMetadata(model)
+                                }
                             } icon: {
                                 Image(systemName: selectedModel.id == model.id ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(selectedModel.id == model.id ? .green : .secondary)
                             }
                         }
                         .badge(sizeBadge(model))
@@ -118,6 +134,22 @@ struct OnboardingInstallModelView: View {
             #endif
         }
         .formStyle(.grouped)
+    }
+
+    /// Model metadata view: vision support, speed, recommended device
+    @ViewBuilder
+    private func modelMetadata(_ model: NaviModel) -> some View {
+        HStack(spacing: 8) {
+            if model.isMultimodal {
+                Label("Vision", systemImage: "eye")
+                    .font(.caption2)
+            }
+            Label(model.estimatedSpeed, systemImage: "gauge.with.dots.needle.33percent")
+                .font(.caption2)
+            Label(model.recommendedDevice, systemImage: "iphone")
+                .font(.caption2)
+        }
+        .foregroundStyle(.tertiary)
     }
 
     var body: some View {
@@ -157,7 +189,7 @@ struct OnboardingInstallModelView: View {
             .filter { model in
                 return model.modelSize <= Decimal(modelMemoryThreshold * appManager.availableMemory)
             }
-            .sorted { $0.id < $1.id }
+            .sorted { $0.sizeMB < $1.sizeMB }
     }
 
     func checkModels() {

@@ -4,6 +4,7 @@
 //
 //  Based on fullmoon by Jordan Singer.
 //  Modified for Navi - uses LiteRTInferenceService, adds image picker support.
+//  Sprint 5.5: Added error state UI, long-press copy/delete.
 //
 
 import MarkdownUI
@@ -28,6 +29,9 @@ struct ChatView: View {
     // Image picker state
     @State private var selectedImage: UIImage?
     @State private var photoPickerItem: PhotosPickerItem?
+
+    // Error state (Sprint 5.5)
+    @State private var showError = false
 
     var isPromptEmpty: Bool {
         prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedImage == nil
@@ -210,6 +214,45 @@ struct ChatView: View {
         #endif
     }
 
+    // MARK: - Error Banner (Sprint 5.5)
+
+    @ViewBuilder
+    var errorBanner: some View {
+        if let error = llm.lastError {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Text(error.localizedDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+
+                Spacer()
+
+                if error.shouldShowRetry {
+                    Button("重试") {
+                        retryLastGeneration()
+                    }
+                    .font(.caption)
+                    .buttonStyle(.bordered)
+                }
+
+                if error.shouldShowModelManagement {
+                    Button("模型管理") {
+                        showModelPicker = true
+                    }
+                    .font(.caption)
+                    .buttonStyle(.bordered)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color.red.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal)
+        }
+    }
+
     var chatTitle: String {
         if let currentThread = currentThread {
             if let firstMessage = currentThread.sortedMessages.first {
@@ -233,6 +276,9 @@ struct ChatView: View {
                         .foregroundStyle(.quaternary)
                     Spacer()
                 }
+
+                // Error banner above input
+                errorBanner
 
                 HStack(alignment: .bottom) {
                     modelPickerButton
@@ -359,6 +405,32 @@ struct ChatView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// Retry the last generation after an error
+    private func retryLastGeneration() {
+        guard let currentThread = currentThread,
+              let lastUserMessage = currentThread.sortedMessages.last(where: { $0.role == .user }),
+              let modelName = appManager.currentModelName else {
+            return
+        }
+
+        generatingThreadID = currentThread.id
+        Task {
+            let output = await llm.generate(
+                modelName: modelName,
+                thread: currentThread,
+                systemPrompt: appManager.systemPrompt
+            )
+            let assistantMsg = Message(
+                role: .assistant,
+                content: output,
+                thread: currentThread,
+                generatingTime: llm.thinkingTime
+            )
+            sendMessage(assistantMsg)
+            generatingThreadID = nil
         }
     }
 

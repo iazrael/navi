@@ -4,6 +4,7 @@
 //
 //  Based on fullmoon by Xavier (16/12/2024).
 //  Modified for Navi - uses LiteRTInferenceService, adds image rendering in messages.
+//  Sprint 5.5: Added long-press context menu for copy/delete.
 //
 
 import MarkdownUI
@@ -30,6 +31,7 @@ extension TimeInterval {
 
 struct MessageView: View {
     @Environment(LiteRTInferenceService.self) var llm
+    @Environment(\.modelContext) var modelContext
     @State private var collapsed = true
     let message: Message
 
@@ -131,6 +133,25 @@ struct MessageView: View {
                     }
                 }
                 .padding(.trailing, 48)
+                // Long-press context menu for assistant messages
+                .contextMenu {
+                    Button {
+                        #if os(iOS) || os(visionOS)
+                        UIPasteboard.general.string = message.content
+                        #elseif os(macOS)
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(message.content, forType: .string)
+                        #endif
+                    } label: {
+                        Label("复制", systemImage: "doc.on.doc")
+                    }
+
+                    Button(role: .destructive) {
+                        deleteMessage()
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                }
             } else {
                 VStack(alignment: .trailing, spacing: 8) {
                     // Image rendering for user messages
@@ -160,6 +181,25 @@ struct MessageView: View {
                     #endif
                 }
                 .padding(.leading, 48)
+                // Long-press context menu for user messages
+                .contextMenu {
+                    Button {
+                        #if os(iOS) || os(visionOS)
+                        UIPasteboard.general.string = message.content
+                        #elseif os(macOS)
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(message.content, forType: .string)
+                        #endif
+                    } label: {
+                        Label("复制", systemImage: "doc.on.doc")
+                    }
+
+                    Button(role: .destructive) {
+                        deleteMessage()
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                }
             }
 
             if message.role == .assistant { Spacer() }
@@ -179,6 +219,12 @@ struct MessageView: View {
                 llm.isThinking = isThinking
             }
         }
+    }
+
+    private func deleteMessage() {
+        message.thread?.messages.removeAll { $0.id == message.id }
+        modelContext.delete(message)
+        try? modelContext.save()
     }
 }
 

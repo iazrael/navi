@@ -38,6 +38,12 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink(destination: AdvancedSettingsView()) {
+                        Label("高级设置", systemImage: "slider.horizontal.3")
+                    }
+                }
+
+                Section {
                     NavigationLink(destination: CreditsView()) {
                         Text("credits")
                     }

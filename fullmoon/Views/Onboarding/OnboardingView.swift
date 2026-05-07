@@ -4,12 +4,27 @@
 //
 //  Based on fullmoon by Jordan Singer.
 //  Modified for Navi branding.
+//  Sprint 4.4: Added device compatibility check (≥ A17 Pro / iPhone 15 Pro+).
 //
 
 import SwiftUI
 
 struct OnboardingView: View {
     @Binding var showOnboarding: Bool
+    
+    /// Check device compatibility for on-device LLM
+    private var isDeviceCompatible: Bool {
+        #if os(iOS)
+        // Check for Metal 3 support and sufficient RAM
+        guard let device = MTLCreateSystemDefaultDevice() else { return false }
+        guard device.supportsFamily(.metal3) else { return false }
+        // Check RAM: need at least 6GB for recommended models
+        let ramGB = ProcessInfo.processInfo.physicalMemory / (1024 * 1024 * 1024)
+        return ramGB >= 4 // Minimum 4GB for smallest model
+        #else
+        return true // macOS and visionOS always compatible
+        #endif
+    }
     
     var body: some View {
         NavigationStack {
@@ -92,20 +107,33 @@ struct OnboardingView: View {
                 
                 Spacer()
                 
-                NavigationLink(destination: OnboardingInstallModelView(showOnboarding: $showOnboarding)) {
-                    Text("开始使用")
-                        #if os(iOS) || os(visionOS)
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 40)
-                        #endif
-                        #if os(iOS)
-                        .foregroundStyle(.background)
-                        #endif
+                if isDeviceCompatible {
+                    NavigationLink(destination: OnboardingInstallModelView(showOnboarding: $showOnboarding)) {
+                        Text("开始使用")
+                            #if os(iOS) || os(visionOS)
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 40)
+                            #endif
+                            #if os(iOS)
+                            .foregroundStyle(.background)
+                            #endif
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .buttonBorderShape(.capsule)
+                    .padding(.horizontal)
+                } else {
+                    VStack(spacing: 12) {
+                        Text("您的设备暂不支持 Navi")
+                            .font(.headline)
+                            .foregroundStyle(.red)
+                        Text("Navi 需要 iPhone 15 Pro 及以上机型（A17 Pro 芯片或更新）")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal)
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
-                .padding(.horizontal)
             }
             .padding()
             .navigationTitle("welcome")

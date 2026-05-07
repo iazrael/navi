@@ -15,6 +15,7 @@ struct NaviApp: App {
     #endif
     @StateObject var appManager = AppManager()
     @State var llm = LiteRTInferenceService()
+    @Environment(\.scenePhase) var scenePhase
     
     var body: some Scene {
         WindowGroup {
@@ -22,6 +23,16 @@ struct NaviApp: App {
                 .modelContainer(for: [Thread.self, Message.self])
                 .environmentObject(appManager)
                 .environment(llm)
+                .onChange(of: scenePhase) { _, newPhase in
+                    switch newPhase {
+                    case .background:
+                        llm.handleEnterBackground()
+                    case .active:
+                        llm.handleEnterForeground()
+                    default:
+                        break
+                    }
+                }
                 #if os(macOS) || os(visionOS)
                 .frame(minWidth: 640, maxWidth: .infinity, minHeight: 420, maxHeight: .infinity)
                 #if os(macOS)

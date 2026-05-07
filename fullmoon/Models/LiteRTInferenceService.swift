@@ -27,6 +27,9 @@ class LiteRTInferenceService {
     var collapsed: Bool = false
     var isThinking: Bool = false
 
+    /// Last inference error for UI display
+    var lastError: InferenceError?
+
     var elapsedTime: TimeInterval? {
         if let startTime {
             return Date().timeIntervalSince(startTime)
@@ -40,34 +43,157 @@ class LiteRTInferenceService {
     private var engine: Any? // Will be LiteRTLMEngine once SPM dependency added
     private var loadedModelId: String?
 
+    // --- Memory management ---
+    private var backgroundTask: Task<Void, Never>?
+    private var memoryWarningObserver: NSObjectProtocol?
+
     // --- Configuration ---
-    var maxTokens: Int { NaviConfig.maxTokens }
+    var maxTokens: Int { inferenceConfig.maxTokens }
     private let displayEveryNTokens = 4
     private let contextManager = ContextManager(maxContextTokens: NaviConfig.maxContextTokens)
 
-    enum InferenceError: Error {
+    /// Current inference configuration (persisted via AppManager)
+    var inferenceConfig: InferenceConfig = InferenceConfig.load()
+
+    enum InferenceError: Error, LocalizedError {
         case modelNotLoaded
         case engineBusy
-        case modelFileNotFound
+        case modelFileNotFound(String)
         case loadFailed(String)
         case inferenceFailed(String)
+        case outOfMemory
+        case cancelled
+
+        var errorDescription: String? {
+            switch self {
+            case .modelNotLoaded:
+                return "模型未加载，请先下载并选择一个模型"
+            case .engineBusy:
+                return "推理引擎正在忙碌中"
+            case .modelFileNotFound(let name):
+                return "模型文件不存在：\(name)。请前往模型管理页下载"
+            case .loadFailed(let reason):
+                return "模型加载失败：\(reason)"
+            case .inferenceFailed(let reason):
+                return "推理失败：\(reason)"
+            case .outOfMemory:
+                return "内存不足，建议关闭其他应用或使用更小的模型"
+            case .cancelled:
+                return "推理已取消"
+            }
+        }
+
+        /// User-friendly recovery suggestion
+        var recoverySuggestion: String? {
+            switch self {
+            case .modelNotLoaded, .modelFileNotFound:
+                return "前往 模型管理 下载模型"
+            case .loadFailed:
+                return "请重试或切换其他模型"
+            case .outOfMemory:
+                return "关闭其他应用后重试，或在设置中选择更小的模型"
+            default:
+                return nil
+            }
+        }
+
+        /// Whether this error should show a "go to models" action
+        var shouldShowModelManagement: Bool {
+            switch self {
+            case .modelNotLoaded, .modelFileNotFound:
+                return true
+            default:
+                return false
+            }
+        }
+
+        /// Whether this error should show a retry button
+        var shouldShowRetry: Bool {
+            switch self {
+            case .loadFailed, .outOfMemory, .inferenceFailed:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    // MARK: - Initialization
+
+    init() {
+        setupMemoryWarningHandling()
+    }
+
+    deinit {
+        if let observer = memoryWarningObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    // MARK: - Memory Warning Handling (Sprint 4.2)
+
+    private func setupMemoryWarningHandling() {
+        memoryWarningObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didReceiveMemoryWarningNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.handleMemoryWarning()
+            }
+        }
+    }
+
+    private func handleMemoryWarning() async {
+        // Release KV-cache and unload model
+        unloadModel()
+        lastError = .outOfMemory
+        modelInfo = "内存警告：已释放模型资源"
+    }
+
+    // MARK: - Background Handling (Sprint 4.2)
+
+    /// Called when app enters background. Keeps model loaded for 30 seconds, then releases.
+    func handleEnterBackground() {
+        backgroundTask?.cancel()
+        backgroundTask = Task {
+            // Keep model for 30 seconds in case user returns quickly
+            try? await Task.sleep(for: .seconds(30))
+            guard !Task.isCancelled else { return }
+            if self.engine != nil {
+                self.unloadModel()
+                self.modelInfo = "后台超时：已释放模型（重新进入时自动加载）"
+            }
+        }
+    }
+
+    /// Called when app enters foreground. Reloads model if needed.
+    func handleEnterForeground() {
+        backgroundTask?.cancel()
+        backgroundTask = nil
     }
 
     // MARK: - Model Loading
 
     func load(modelName: String) async throws {
         guard let model = NaviModelRegistry.getModelById(modelName) else {
-            throw InferenceError.modelFileNotFound
+            throw InferenceError.modelFileNotFound(modelName)
         }
         try await loadModel(model)
     }
 
     func switchModel(_ model: NaviModel) async {
         progress = 0.0
+        lastError = nil
         do {
             try await loadModel(model)
+        } catch let error as InferenceError {
+            lastError = error
+            modelInfo = error.localizedDescription
         } catch {
-            modelInfo = "Failed to load model: \(error.localizedDescription)"
+            let inferenceError = InferenceError.loadFailed(error.localizedDescription)
+            lastError = inferenceError
+            modelInfo = inferenceError.localizedDescription
         }
     }
 
@@ -78,8 +204,8 @@ class LiteRTInferenceService {
         let filePath = modelFilePath(for: model)
 
         // Check if model file exists
-        if !FileManager.default.fileExists(atPath: filePath) {
-            throw InferenceError.modelFileNotFound
+        guard FileManager.default.fileExists(atPath: filePath) else {
+            throw InferenceError.modelFileNotFound(model.displayName)
         }
 
         // Unload previous engine
@@ -87,20 +213,25 @@ class LiteRTInferenceService {
 
         progress = 0.2
 
-        // Initialize LiteRTLMEngine and load model
-        // When LiteRTLM-Swift SPM is added, this becomes:
-        //   let litertEngine = LiteRTLMEngine(modelPath: filePath, backend: "gpu")
-        //   try await litertEngine.load()
-        //   engine = litertEngine
+        do {
+            // Initialize LiteRTLMEngine and load model
+            // When LiteRTLM-Swift SPM is added, this becomes:
+            //   let litertEngine = LiteRTLMEngine(modelPath: filePath, backend: "gpu")
+            //   try await litertEngine.load()
+            //   engine = litertEngine
 
-        // TODO: verify with LiteRTLM-Swift docs - uncomment when SPM dependency is added
-        // let litertEngine = LiteRTLMEngine(modelPath: filePath, backend: "gpu")
-        // try await litertEngine.load()
-        // engine = litertEngine
+            // TODO: verify with LiteRTLM-Swift docs - uncomment when SPM dependency is added
+            // let litertEngine = LiteRTLMEngine(modelPath: filePath, backend: "gpu")
+            // try await litertEngine.load()
+            // engine = litertEngine
 
-        loadedModelId = model.id
-        modelInfo = "Loaded \(model.displayName)"
-        progress = 1.0
+            loadedModelId = model.id
+            modelInfo = "Loaded \(model.displayName)"
+            progress = 1.0
+        } catch {
+            unloadModel()
+            throw InferenceError.loadFailed(error.localizedDescription)
+        }
     }
 
     // MARK: - Generation
@@ -116,6 +247,7 @@ class LiteRTInferenceService {
         running = true
         cancelled = false
         output = ""
+        lastError = nil
         startTime = Date()
 
         do {
@@ -123,7 +255,7 @@ class LiteRTInferenceService {
             try await loadModel(model)
 
             // Build prompt history with context management
-            let history = contextManager.buildPromptHistory(
+            let history = await contextManager.buildPromptHistory(
                 thread: thread,
                 systemPrompt: systemPrompt
             )
@@ -147,8 +279,13 @@ class LiteRTInferenceService {
             // Mark the thread's model
             thread.modelId = model.id
 
+        } catch let error as InferenceError {
+            lastError = error
+            output = ""
         } catch {
-            output = "推理失败: \(error.localizedDescription)"
+            let inferenceError = InferenceError.inferenceFailed(error.localizedDescription)
+            lastError = inferenceError
+            output = ""
         }
 
         running = false
@@ -159,6 +296,7 @@ class LiteRTInferenceService {
         isThinking = false
         cancelled = true
         running = false
+        lastError = .cancelled
     }
 
     func unloadModel() {
@@ -169,6 +307,16 @@ class LiteRTInferenceService {
         engine = nil
         loadedModelId = nil
         modelInfo = ""
+    }
+
+    /// Check if a model is currently loaded
+    var isModelLoaded: Bool {
+        return engine != nil && loadedModelId != nil
+    }
+
+    /// Currently loaded model ID
+    var currentModelId: String? {
+        return loadedModelId
     }
 
     // MARK: - Private Helpers
@@ -214,8 +362,11 @@ class LiteRTInferenceService {
         // let litertEngine = engine as! LiteRTLMEngine
         // let stream = litertEngine.generateStreaming(
         //     prompt: prompt,
-        //     temperature: 0.7,
-        //     maxTokens: maxTokens
+        //     temperature: inferenceConfig.temperature,
+        //     topK: inferenceConfig.topK,
+        //     topP: inferenceConfig.topP,
+        //     maxTokens: inferenceConfig.maxTokens,
+        //     repeatPenalty: inferenceConfig.repeatPenalty
         // )
         // for try await chunk in stream {
         //     if cancelled { break }
@@ -232,6 +383,10 @@ class LiteRTInferenceService {
         // Placeholder: remove when SPM dependency is added
         fullOutput = "[LiteRT-LM inference output placeholder]"
 
+        if cancelled {
+            throw InferenceError.cancelled
+        }
+
         return fullOutput
     }
 
@@ -246,8 +401,8 @@ class LiteRTInferenceService {
         // let result = try await litertEngine.vision(
         //     imageData: imageData,
         //     prompt: prompt,
-        //     temperature: 0.7,
-        //     maxTokens: maxTokens,
+        //     temperature: inferenceConfig.temperature,
+        //     maxTokens: inferenceConfig.maxTokens,
         //     maxImageDimension: NaviConfig.imageSize
         // )
         // return result

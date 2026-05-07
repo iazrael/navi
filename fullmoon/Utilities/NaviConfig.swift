@@ -10,9 +10,9 @@ import Foundation
 
 enum NaviConfig {
     // MARK: - Inference
-    /// Maximum tokens to generate per response
+    /// Maximum tokens to generate per response (overridden by InferenceConfig)
     static let maxTokens = 4096
-    /// Sampling temperature for generation
+    /// Sampling temperature for generation (overridden by InferenceConfig)
     static let temperature: Float = 0.7
     
     // MARK: - Context Management
@@ -20,6 +20,8 @@ enum NaviConfig {
     static let maxContextTokens = 3072
     /// Maximum conversation turns to keep in context
     static let maxTurns = 10
+    /// Default context strategy
+    static let defaultContextStrategy: ContextStrategy = .slidingWindow
     
     // MARK: - Streaming
     /// Throttle interval for streaming UI updates (seconds)
@@ -36,4 +38,10 @@ enum NaviConfig {
     static let thumbnailSize: Int = 200
     /// JPEG compression quality for thumbnail storage
     static let thumbnailCompressionQuality: CGFloat = 0.5
+    
+    // MARK: - Device Compatibility (Sprint 4.4)
+    /// Minimum chip for recommended experience (A17 Pro = iPhone 15 Pro and above)
+    static let minimumChipForRecommended = "A17 Pro"
+    /// Minimum RAM for running models (in GB)
+    static let minimumRAMGB: Double = 6.0
 }
